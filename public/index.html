@@ -19,6 +19,14 @@
       <section class="workspace">
         <form id="generator" class="composer">
           <label>
+            Provider
+            <select id="provider" name="provider"><option value="openrouter">OpenRouter</option><option value="modelark">ByteDance ModelArk</option></select>
+          </label>
+          <label>
+            Generation type
+            <select id="generation-type" name="generation_type"><option value="video">Video</option><option value="image">Image (ModelArk)</option></select>
+          </label>
+          <label>
             Model
             <select id="model" name="model" required>
               <option value="bytedance/seedance-2.5">ByteDance Seedance 2.5</option>
@@ -32,19 +40,38 @@
           </label>
           <p class="hint">A prompt is required unless you supply a first or last frame.</p>
 
-          <div class="grid">
+          <div id="video-settings" class="grid">
             <label>Duration <select id="duration" name="duration"></select></label>
             <label>Frame <select name="aspect_ratio"><option>16:9</option><option>4:3</option><option>1:1</option><option>3:4</option><option>9:16</option><option>21:9</option></select></label>
             <label>Resolution <select name="resolution"><option>480p</option><option selected>720p</option></select></label>
           </div>
           <label>Exact output size <select name="size" id="size"><option value="">Use the resolution and frame settings</option><option>854x480</option><option>752x560</option><option>640x640</option><option>560x752</option><option>480x854</option><option>992x432</option><option>1280x720</option><option>1112x834</option><option>960x960</option><option>834x1112</option><option>720x1280</option><option>1470x630</option></select></label>
 
+          <div id="image-settings" class="grid" hidden>
+            <label>Image aspect ratio <select name="image_aspect_ratio"><option value="1:1">1:1 · Square</option><option value="4:3">4:3 · Standard landscape</option><option value="3:4">3:4 · Standard portrait</option><option value="3:2">3:2 · Photo landscape</option><option value="2:3">2:3 · Photo portrait</option><option value="16:9">16:9 · Widescreen</option><option value="9:16">9:16 · Vertical</option><option value="21:9">21:9 · Ultra-wide</option></select></label>
+            <label>Image resolution <select name="image_resolution"><option value="2K" selected>2K</option><option value="3K">3K</option><option value="4K">4K</option></select></label>
+            <label>Images to generate <select name="image_count"><option value="1">1 image</option></select><span id="image-count-note" class="field-note"></span></label>
+          </div>
+
           <details>
             <summary>Reference images &amp; frame control</summary>
-            <section class="extension-panel">
+            <section id="source-video-panel" class="extension-panel">
               <p class="section-label">True video extension · Seedance 2.5</p>
               <p class="hint">Send the original clip as <code>@Video1</code>. Use a prompt such as “Extend @Video1 forward: …”. This is different from extracting a still as a first frame. Extension output keeps the source clip’s framing, so the Frame and Exact output size controls are ignored.</p>
               <label>Source video to extend <input id="source-video-file" type="file" accept="video/*" /><input id="source-video-url" type="url" placeholder="Paste a direct HTTPS video URL" /><span class="field-note">OpenRouter’s video-generation endpoint requires a directly downloadable HTTPS URL. You can paste one above, or connect Google Drive below to upload a selected local clip into a temporary scratch file.</span></label>
+              <div id="extension-trim" class="extension-trim" hidden>
+                <p class="section-label">Extension trim · local source video</p>
+                <div class="trim-controls">
+                  <div class="trim-values"><span>Start <output id="trim-start-value">0.00s</output></span><span>End <output id="trim-end-value">0.00s</output></span></div>
+                  <div id="trim-range" class="trim-range" style="--trim-start:0%; --trim-end:100%">
+                    <input id="trim-start" type="range" min="0" max="1" step="0.01" value="0" aria-label="Trim start time" />
+                    <input id="trim-end" type="range" min="0" max="1" step="0.01" value="1" aria-label="Trim end time" />
+                  </div>
+                </div>
+                <p class="field-note">Select 2–15 seconds. The downloaded clip uses a frame-accurate lossless H.264 re-encode; previews update while you adjust the range.</p>
+                <div id="trim-previews" class="previews" aria-live="polite"></div>
+                <span><button id="download-trim" class="quiet" type="button">Download trimmed video</button><span id="trim-status" class="field-note"></span></span>
+              </div>
               <div class="drive-scratch"><span id="drive-status" class="field-note">Checking Google Drive scratch upload…</span><span class="drive-actions"><button id="connect-drive" class="quiet" type="button">Connect Google Drive</button><button id="disconnect-drive" class="quiet" type="button" hidden>Disconnect</button></span></div>
               <div id="source-video-preview" class="source-video-preview" aria-live="polite"></div>
             </section>
@@ -53,7 +80,7 @@
             <div id="reference-previews" class="previews" aria-live="polite"></div>
             <p class="hint">Use the numbered tags in your prompt to assign a role to each reference. Click a tag to insert it. Tags follow the current image order.</p>
             <label>Reference image URLs <textarea id="references" rows="2" placeholder="Optional — one image URL per line"></textarea></label>
-            <div class="grid">
+            <div id="frame-controls" class="grid">
               <label>First frame <input id="first-frame-file" type="file" accept="image/*,video/*" /><input id="first-frame" type="url" placeholder="or image https://…" /><span class="field-note">For still-based continuation, a selected video contributes its final frame.</span></label>
               <label>Last frame <input id="last-frame-file" type="file" accept="image/*,video/*" /><input id="last-frame" type="url" placeholder="or image https://…" /><span class="field-note">A selected destination video contributes its first frame.</span></label>
             </div>
@@ -62,6 +89,15 @@
 
           <label class="check"><input name="generate_audio" type="checkbox" /> Generate audio when supported</label>
           <label class="advanced">Seed <input name="seed" type="number" step="1" placeholder="Optional — for repeatable variations" /></label>
+          <details id="modelark-options" hidden>
+            <summary>ModelArk video options</summary>
+            <div class="grid two">
+              <label class="check"><input name="return_last_frame" type="checkbox" checked /> Return last frame</label>
+              <label class="check"><input name="camera_fixed" type="checkbox" /> Fixed camera</label>
+              <label>Reference task <select name="omni_reference_task_type"><option value="auto">Auto</option><option value="reference">Reference</option><option value="edit">Edit</option><option value="extend">Extend</option></select></label>
+              <label>Video format <select name="output_format"><option value="mp4">MP4</option><option value="mov" selected>MOV</option></select></label>
+            </div>
+          </details>
           <button id="generate" type="submit">Generate video <span>→</span></button>
           <p id="form-error" class="error" role="alert"></p>
         </form>
